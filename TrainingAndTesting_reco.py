@@ -24,6 +24,8 @@ from threading import Timer
 import thread
 import select, subprocess
 from tools.mass import collinearmass
+from tools import tau
+from tools.variables import *
 
 TMVA.Tools.Instance()
 
@@ -69,24 +71,27 @@ _Zmass=91.1876
 _Zmass_window = [_Zmass-3.738,_Zmass+3.738]
 
 #Make plots using average mass instead of nominal mass. This should generally be set to True, as this seems to correct biases caused by varying distribution shapes.
-_useAverageMass=True
+_useAverageMass=True 
 
 #ditau_m, alpha, alpha_vis
 _target='ditau_m'
 
+#TRAIN AND TEST ALL TRUTH VARIABLES
 _fillTrainTestTrees=False
-_doTraining =False
+_doTraining = True
 _doTesting  = True
 
 if _doTesting:
-    _testWOCalibration = False
+    _testWOCalibration = True
     _doCalibration     = False
-    _testCalibration   = True
+    _testCalibration   = False
+
+    _doZCal            = False
     if _doCalibration and not(_target=='ditau_m'):
         print 'Calibration is only available for regression on ditau mass.'
         sys.exit()
 
-    if not OR(_testWOCalibration,_doCalibration,_testCalibration):
+    if not OR(_testWOCalibration,_doCalibration,_testCalibration,_doZCal):
         print 'Error: You set "_doTesting" = True, so you also need to set "_testWOCalibration", "_doCalibration" or "_testCalibration" = True.'
         sys.exit()
 
@@ -95,13 +100,22 @@ _useTauVariables             = False
 _useTauDecayVariables        = False
 _useAnalysisVariables        = True
 _useSmearedAnalysisVariables = False
-#To add
-_useFullSimVariables         = False
 
-if not XOR(_useBosonVariables,_useTauVariables,_useTauDecayVariables,_useAnalysisVariables,_useSmearedAnalysisVariables,_useFullSimVariables):
+_useFullSimVariables         = False
+_useRelativeVariables        = False
+_energyScale                 = 'ptsum_lep1_lep2_met'
+
+_useSmirnovVariables         = False
+if not(_useRelativeVariables):
+    _energyScale=''
+elif _energyScale=='':
+    print 'Error: Energy scale not set.'
+    sys.exit()
+
+if not XOR(_useBosonVariables,_useTauVariables,_useTauDecayVariables,_useAnalysisVariables,_useSmearedAnalysisVariables,_useFullSimVariables,_useSmirnovVariables):
     print 'Error: Only one of the variables type can/must be True.'
     sys.exit()
-if not  OR(_useBosonVariables,_useTauVariables,_useTauDecayVariables,_useAnalysisVariables,_useSmearedAnalysisVariables,_useFullSimVariables):
+if not  OR(_useBosonVariables,_useTauVariables,_useTauDecayVariables,_useAnalysisVariables,_useSmearedAnalysisVariables,_useFullSimVariables,_useSmirnovVariables):
     print 'Error: You need to set one of the variables type.'
     sys.exit()
 
@@ -117,11 +131,13 @@ if OR(_doTraining,_doTesting):
         print 'Error: You need to set the di-tau decay channel.'
         sys.exit()
 
-_applyPreselCuts = False
+_applyPreselCuts = True
 _useAnalysisPresel=False
+_writeProjectedMass=True
+
 if OR(_doTraining,_doTesting):
     if _applyPreselCuts:
-        if not OR(_useAnalysisVariables,_useSmearedAnalysisVariables):
+        if not OR(_useAnalysisVariables,_useSmearedAnalysisVariables,_useFullSimVariables,_useSmirnovVariables):
             print 'Error: preselection cuts can be applied only to analysis type variables.'
             sys.exit()
 
@@ -139,43 +155,44 @@ if _useAnalysisPresel and not(_applyPreselCuts):
 ##pT_had_1>35000
 ##pT_had_2>25000
 ##MET >20000
+if _useFullSimVariables:
+    _mass_points_train=[100,105,110,115,120,125,130,135,140,145,150]
+    _mass_points_test=_mass_points_train
+    _mass_points_calibration=[]
+else:
+    _mass_points_train = range(40,201)
+    #_mass_points_train=[40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150,155,160,165,170,175,180,185,190,195,200]
+    #_mass_points_train=range(100,151)
+    #_mass_points_train=[100,105,110,115,120,125,130,135,140,145,150]
+    _mass_points_calibration =[40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150,155,160,165,170,175,180,185,190,195,200]
 
-_mass_points_train = range(40,201, 5)
+    _mass_points_test = range(40,201)
+    #_mass_points_test = [40,45,50,55,60,65,70,75,80,85,90,95,100,105,110,115,120,125,130,135,140,145,150,155,160,165,170,175,180,185,190,195,200]
+    #_mass_points_test = range(100,151)
+    #_mass_points_test=[100,105,110,115,120,125,130,135,140,145,150]
+if _doTesting and _testCalibration:
+    for m in _mass_points_calibration:
+        if m in _mass_points_test:
+            _mass_points_test.pop(_mass_points_test.index(m))
+_mass_points_test.sort()
 
-_mass_points_calibration = range(40, 201,5)
+_mass_points_all = []
+for m in _mass_points_train + _mass_points_calibration + _mass_points_test:
+    if m not in _mass_points_all:
+        _mass_points_all.append(m)
+_mass_points_all.sort()
 
-_mass_points_test = range(40,201, 5)
+if _useFullSimVariables:
+    _HttSamplesDirName='/media/Portable Drive/Work/reco_files/'
+    _TreeNameInput     = 'TreeTest'
+else:
+    _HttSamplesDirName = '/media/Portable Drive/Work/higgs/rootfiles'
+    _ZttSamplesDirName = _HttSamplesDirName
+    _TreeNameInput     = 'Tree'
 
-#if _doTesting and _testCalibration:
-#    for m in _mass_points_calibration:
-#        if m in _mass_points_test:
-#            _mass_points_test.pop(_mass_points_test.index(m))
-#_mass_points_test.sort()
-
-
-
-_mass_points_all = range (40, 201, 5)
-#_mass_points_all = []
-#for m in _mass_points_train + _mass_points_calibration + _mass_points_test:
-#    if m not in _mass_points_all:
-#       _mass_points_all.append(m)
-#_mass_points_all.sort()
-
-#_HttSamplesDirName = '/cluster/data04/mquennev/higgs/rootfiles'
-_HttSamplesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/Truth_level_Htautau'
-
-_ZttSamplesDirName = _HttSamplesDirName
-_TreeNameInput     = 'Tree'
-
-#_treesDirName   = '/cluster/data04/mquennev/higgs/trees'
-
-#_testDirName    = '/cluster/data04/mquennev/higgs/test'
-#_weightsDirName = '/cluster/data04/mquennev/higgs/weights'
-
-_treesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/trees'
-_testDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/test'
-_weightsDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/weights'
-
+_treesDirName   = '/media/Portable Drive/Work/higgs/trees'
+_testDirName    = '/media/Portable Drive/Work/higgs/test'
+_weightsDirName = '/media/Portable Drive/Work/higgs/weights'
 _TreeNameTrain  = 'TreeTrain'
 _TreeNameTest   = 'TreeTest'
 
@@ -228,8 +245,8 @@ if _useTauDecayVariables:
 if _useAnalysisVariables:
     variables['lep1_pt']                      = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
     variables['lep1_eta']                     = [''   ,'F',-10.00,10.00,  array.array('f',[0]),TBranch(), -10.00,10.00,  200]
-    variables['lep2_pt']                      = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
-    variables['lep2_eta']                     = [''   ,'F',-10.00,10.00,  array.array('f',[0]),TBranch(), -10.00,10.00,  200]
+    variables['lep2_pt']                     = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
+    variables['lep2_eta']    = [''   ,'F',-10.00,10.00,  array.array('f',[0]),TBranch(), -10.00,10.00,  200]
     variables['met_et']                       = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
     variables['transverse_mass_lep1_lep2']    = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
     variables['transverse_mass_lep1_met']     = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
@@ -244,6 +261,11 @@ if _useAnalysisVariables:
     variables['pttot_lep1_lep2_met']          = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
     variables['pttot_lep1_lep2']              = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
     variables['ptdiff_lep1_lep2']             = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
+    variables['visible_mass']                 = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+    #variables['met_phi_centrality']                 = ['',   'F',  0.00,9999999,array.array('f',[0]),TBranch(),   -1.45,1.45, 50]
+    #variables['collinear_mass']               = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+    #variables['proj_mass_lep1_by_visible_mass']               = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+    #variables['proj_mass_lep2_by_visible_mass']               = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
 
 if _useSmearedAnalysisVariables:
     variables['lep1_pt_sm']                   = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
@@ -265,12 +287,79 @@ if _useSmearedAnalysisVariables:
     variables['pttot_lep1_lep2_sm']           = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
     variables['ptdiff_lep1_lep2_sm']          = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
 
+if _useFullSimVariables:
+    if _useRelativeVariables:
+        variables['lep1_pt']                      = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,200000., 40]
+        variables['lep1_eta']                     = [''   ,'F',-10.00,10.00,  array.array('d',[0]),TBranch(), -10.00,10.00,  200]
+        variables['lep2_pt']                      = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,200000., 40]
+        variables['lep2_eta']                     = [''   ,'F',-10.00,10.00,  array.array('d',[0]),TBranch(), -10.00,10.00,  200]
+        variables['met_et']                       = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,200000., 40]
+        variables['transverse_mass_lep1_lep2']    = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,250000., 50]
+        variables['transverse_mass_lep1_met']     = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,250000., 50]
+        variables['transverse_mass_lep2_met']     = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,250000., 50]
+        variables['dphi_lep1_met']                = ['rad','F',  0.00, 3.15,  array.array('d',[0]),TBranch(),   0.00, 3.15,   30]
+        variables['dphi_lep2_met']                = ['rad','F',  0.00, 3.15,  array.array('d',[0]),TBranch(),   0.00, 3.15,   30]
+        variables['dphi_lep_lep']                 = ['rad','F',  0.00, 3.15,  array.array('d',[0]),TBranch(),   0.00, 3.15,   30]
+        variables['deta_lep_lep']                 = ['',   'F',  0.00,20.00,  array.array('d',[0]),TBranch(),   0.00,20.00,  200]
+        variables['dR_lep_lep']                   = ['',   'F',  0.00,25.00,  array.array('d',[0]),TBranch(),   0.00,20.00,  200]
+        variables['ptsum_lep1_lep2_met']          = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,300000., 30]
+        variables['ptsum_lep1_lep2']              = ['MeV','F',  0.00,9999999,array.array('d',[0]),TBranch(),   0.00,250000., 25]
+        variables['pttot_lep1_lep2_met']          = ['',   'F',  0.00, 2.00,  array.array('d',[0]),TBranch(),   0.00, 1.10,   22]
+        variables['pttot_lep1_lep2']              = ['',   'F',  0.00, 2.00,  array.array('d',[0]),TBranch(),   0.00, 1.10,   22]
+        variables['ptdiff_lep1_lep2']             = ['',   'F',  0.00, 2.00,  array.array('d',[0]),TBranch(),   0.00, 1.10,   22]
+    else:
+        variables['lep1_pt']                      = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
+        variables['lep1_eta']                     = [''   ,'F',-10.00,10.00,  array.array('f',[0]),TBranch(), -10.00,10.00,  200]
+        variables['lep2_pt']                     = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
+        variables['lep2_eta']    = [''   ,'F',-10.00,10.00,  array.array('f',[0]),TBranch(), -10.00,10.00,  200]
+        variables['met_et']                       = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
+        variables['transverse_mass_lep1_lep2']    = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+        variables['transverse_mass_lep1_met']     = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+        variables['transverse_mass_lep2_met']     = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+        variables['dphi_lep1_met']                = ['rad','F',  0.00, 3.15,  array.array('f',[0]),TBranch(),   0.00, 3.15,   30]
+        variables['dphi_lep2_met']                = ['rad','F',  0.00, 3.15,  array.array('f',[0]),TBranch(),   0.00, 3.15,   30]
+        variables['dphi_lep_lep']                 = ['rad','F',  0.00, 3.15,  array.array('f',[0]),TBranch(),   0.00, 3.15,   30]
+        variables['deta_lep_lep']                 = ['',   'F',  0.00,20.00,  array.array('f',[0]),TBranch(),   0.00,20.00,  200]
+        variables['dR_lep_lep']                   = ['',   'F',  0.00,25.00,  array.array('f',[0]),TBranch(),   0.00,20.00,  200]
+        variables['ptsum_lep1_lep2_met']          = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,300000., 30]
+        variables['ptsum_lep1_lep2']              = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 25]
+        variables['pttot_lep1_lep2_met']          = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
+        variables['pttot_lep1_lep2']              = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
+        variables['ptdiff_lep1_lep2']             = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
+        variables['visible_mass']                 = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+        #variables['met_phi_centrality']                 = ['',   'F',  0.00,9999999,array.array('f',[0]),TBranch(),   -1.45,1.45, 50]
+        #variables['collinear_mass']               = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+        #variables['proj_mass_lep1_by_visible_mass']               = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+        #variables['proj_mass_lep2_by_visible_mass']               = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+
+if _useSmirnovVariables:
+    variables['lep1_pt']                      = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
+    variables['lep1_eta']                     = [''   ,'F',-10.00,10.00,  array.array('f',[0]),TBranch(), -10.00,10.00,  200]
+    variables['lep2_pt']                      = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
+    variables['lep2_eta']                     = [''   ,'F',-10.00,10.00,  array.array('f',[0]),TBranch(), -10.00,10.00,  200]
+    variables['met_et_smirnov_par_perp']                       = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,200000., 40]
+    variables['transverse_mass_lep1_lep2']    = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+    variables['transverse_mass_lep1_met_smirnov_par_perp']     = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+    variables['transverse_mass_lep2_met_smirnov_par_perp']     = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+    variables['dphi_lep1_met_smirnov_par_perp']                = ['rad','F',  0.00, 3.15,  array.array('f',[0]),TBranch(),   0.00, 3.15,   30]
+    variables['dphi_lep2_met_smirnov_par_perp']                = ['rad','F',  0.00, 3.15,  array.array('f',[0]),TBranch(),   0.00, 3.15,   30]
+    variables['dphi_lep_lep']                 = ['rad','F',  0.00, 3.15,  array.array('f',[0]),TBranch(),   0.00, 3.15,   30]
+    variables['deta_lep_lep']                 = ['',   'F',  0.00,20.00,  array.array('f',[0]),TBranch(),   0.00,20.00,  200]
+    variables['dR_lep_lep']                   = ['',   'F',  0.00,25.00,  array.array('f',[0]),TBranch(),   0.00,20.00,  200]
+    variables['ptsum_lep1_lep2_met_smirnov_par_perp']          = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,300000., 30]
+    variables['ptsum_lep1_lep2']              = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 25]
+    variables['pttot_lep1_lep2_met_smirnov_par_perp']          = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
+    variables['pttot_lep1_lep2']              = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
+    variables['ptdiff_lep1_lep2']             = ['',   'F',  0.00, 2.00,  array.array('f',[0]),TBranch(),   0.00, 1.10,   22]
+    variables['visible_mass']                 = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
+    variables['met_phi_centrality_smirnov_par_perp']                 = ['',   'F',  0.00,9999999,array.array('f',[0]),TBranch(),   -1.45,1.45, 50]
+    variables['collinear_mass_smirnov_par_perp']               = ['MeV','F',  0.00,9999999,array.array('f',[0]),TBranch(),   0.00,250000., 50]
 channel_string = ''
 if _doLepLep: channel_string = 'H #rightarrow #tau_{lep}#tau_{lep}'
 if _doLepHad: channel_string = 'H #rightarrow #tau_{lep}#tau_{had}'
 if _doHadHad: channel_string = 'H #rightarrow #tau_{had}#tau_{had}'
 
-_polyfit =False
+
 #####################################################################################################
 ##-------------------------------------------------------------------------------------------------##
 ##                                                                                                 ##
@@ -279,15 +368,14 @@ _polyfit =False
 ##-------------------------------------------------------------------------------------------------##
 #####################################################################################################
 
-
-def FillTrainTestTrees(iFileName,oFileName,nTrainEvtsMax):
+def FillTrainTestTrees(iFileName,oFileName,nTrainEvtsMax,treename='Tree',truemass=0.):
 
     print "<--  input file: "+iFileName
     print "--> output file: "+oFileName
     iFile = TFile.Open(iFileName)
-    iTree = iFile.Get(_TreeNameInput)
+    iTree = iFile.Get(treename)
     oDirName = oFileName[::-1].split("/",1)[-1][::-1]
-    os.system("mkdir -p "+oDirName)
+    os.system("mkdir -p "+oDirName.replace(' ','\ '))
     oFile = TFile(oFileName,"RECREATE")
     oTreeTrain = iTree.CloneTree(0)
     oTreeTrain.SetName(_TreeNameTrain)
@@ -298,12 +386,104 @@ def FillTrainTestTrees(iFileName,oFileName,nTrainEvtsMax):
     nEntries = iTree.GetEntries()
     nTrainEvtsMax = round(nEntries/2)
     print "number of entries in original tree = %s" %nEntries
+    
+    if _writeProjectedMass and not(_useFullSimVariables):
+        tlv_tau1=TLorentzVector()
+	tlv_tau2=TLorentzVector()
+	tv2_met=TVector2()
 
+        br_proj_mass_lep1=array.array('d',[0])
+        br_proj_mass_lep2=array.array('d',[0])
+        oTreeTrain.Branch('proj_mass_lep1',br_proj_mass_lep1,'proj_mass_lep1/D')
+        oTreeTrain.Branch('proj_mass_lep2',br_proj_mass_lep2,'proj_mass_lep2/D')
+        oTreeTest.Branch('proj_mass_lep1',br_proj_mass_lep1,'proj_mass_lep1/D')
+        oTreeTest.Branch('proj_mass_lep2',br_proj_mass_lep2,'proj_mass_lep2/D')
+
+    if _useFullSimVariables:
+	tlv_tau1=TLorentzVector()
+	tlv_tau2=TLorentzVector()
+	tv2_met=TVector2()
+	for k,v in variables.iteritems():
+	    oTreeTrain.Branch( k,    variables[k][4],    k+'/D'    )
+            oTreeTest.Branch( k,    variables[k][4],    k+'/D'    )
+
+	br_visible_mass=array.array('d',[0])
+	br_alpha_vis=array.array('d',[0])
+	br_truth_mass=array.array('d',[0])
+        br_mass_fitted=array.array('d',[0])
+        br_alpha_fitted=array.array('d',[0])
+        br_averaged_mass=array.array('d',[0])
+
+        
+
+	oTreeTrain.Branch('alpha_vis',br_alpha_vis,'alpha_vis/D')
+        oTreeTrain.Branch('visible_mass',br_visible_mass,'visible_mass/D')
+        oTreeTrain.Branch('truth_mass',br_truth_mass,'truth_mass/D')
+        oTreeTrain.Branch('mass_fitted',br_mass_fitted,'mass_fitted/D')
+        oTreeTrain.Branch('alpha_fitted',br_alpha_fitted,'alpha_fitted/D')
+        oTreeTrain.Branch('averaged_mass',br_averaged_mass,'averaged_mass/D')
+
+        oTreeTest.Branch('alpha_vis',br_alpha_vis,'alpha_vis/D')
+        oTreeTest.Branch('visible_mass',br_visible_mass,'visible_mass/D')
+        oTreeTest.Branch('truth_mass',br_truth_mass,'truth_mass/D')
+        oTreeTest.Branch('mass_fitted',br_mass_fitted,'mass_fitted/D')
+        oTreeTest.Branch('alpha_fitted',br_alpha_fitted,'alpha_fitted/D')
+        oTreeTest.Branch('averaged_mass',br_averaged_mass,'averaged_mass/D')
+    
+    if _useAnalysisVariables:
+        br_weights_tmva=array.array('d',[0])
+        br_weights_tmva[0]=1./iTree.Draw("lep1_pt",TCut(Cuts(True,False)),"goff")**2
+        oTreeTrain.Branch('weights_tmva',br_weights_tmva,'weights_tmva/D')
+        oTreeTest.Branch('weights_tmva',br_weights_tmva,'weights_tmva/D')
     for ientry in xrange(nEntries):
         ## Get the next tree in the chain and verify.
         if iTree.LoadTree(ientry) <  0: break
         ## Copy next entry into memory and verify.
         if iTree.GetEntry(ientry) <= 0: continue
+	if _useFullSimVariables:
+	    numtrack1=iTree.tau1_numTrack
+	    numtrack2=iTree.tau2_numTrack
+	    if numtrack1==1:
+	    	tlv_tau1.SetPtEtaPhiM(iTree.tau1_pt,iTree.tau1_eta,iTree.tau1_phi,800.)
+	    else:
+	    	tlv_tau1.SetPtEtaPhiM(iTree.tau1_pt,iTree.tau1_eta,iTree.tau1_phi,1200.)
+	    if numtrack2==1:
+	    	tlv_tau2.SetPtEtaPhiM(iTree.tau2_pt,iTree.tau2_eta,iTree.tau2_phi,800.)
+	    else:
+	    	tlv_tau2.SetPtEtaPhiM(iTree.tau2_pt,iTree.tau2_eta,iTree.tau2_phi,1200.)
+	    tau1=tau.Tau(tlv_tau1,numtrack1)
+	    tau2=tau.Tau(tlv_tau2,numtrack2)
+	    tv2_met.SetMagPhi(iTree.MET_et,iTree.MET_phi)
+            br_visible_mass[0]=(tlv_tau1+tlv_tau2).M()
+
+	    for k,v in variables.iteritems():
+                if k==_energyScale and _useRelativeVariables:
+                    continue
+                v[4][0]=evalVariable(k,tau1,tau2,tv2_met.Px(),tv2_met.Py(),_energyScale)
+            if variables['lep1_eta'][4][0]<0.:
+                variables['lep1_eta'][4][0]=-variables['lep1_eta'][4][0]
+                variables['lep2_eta'][4][0]=-variables['lep2_eta'][4][0]
+
+            br_weights_tmva[0]=1./float(nEntries)
+	    br_truth_mass[0]=float(mass)
+            br_averaged_mass[0]=evalVariable('averaged_mass',tau1,tau2,tv2_met.Px(),tv2_met.Py())
+	    br_alpha_vis[0]=1000*br_truth_mass[0]/br_visible_mass[0]
+
+            #Fit results go here: (m_true=m*m_vis+b)
+            m=1.936836
+            b=-48.6240
+            br_mass_fitted[0]=m*br_visible_mass[0]/1000.+b
+            br_alpha_fitted[0]=br_truth_mass[0]/br_mass_fitted[0]
+
+        if _writeProjectedMass and not(_useFullSimVariables):
+            tlv_tau1.SetPtEtaPhiM(iTree.lep1_pt,iTree.lep1_eta,iTree.lep1_phi,800.)
+            tlv_tau2.SetPtEtaPhiM(iTree.lep2_pt,iTree.lep2_eta,iTree.lep2_phi,800.)
+            tau1=tau.Tau(tlv_tau1,1)
+            tau2=tau.Tau(tlv_tau2,1)
+            tv2_met.SetMagPhi(iTree.met_et,iTree.met_phi)
+            br_proj_mass_lep1[0]=evalVariable('proj_mass_lep1',tau1,tau2,tv2_met.Px(),tv2_met.Py())
+            br_proj_mass_lep2[0]=evalVariable('proj_mass_lep2',tau1,tau2,tv2_met.Px(),tv2_met.Py())
+
         if _useBosonVariables or _useTauVariables:
             if nTrainEvts < nTrainEvtsMax/10.:
                 oTreeTrain.Fill()
@@ -318,6 +498,7 @@ def FillTrainTestTrees(iFileName,oFileName,nTrainEvtsMax):
             else:
                 oTreeTest.Fill()
                 nTestEvts  += 1
+	    
     oTreeTrain.AutoSave()
     oTreeTest.AutoSave()
     iFile.Close()
@@ -356,46 +537,42 @@ def Training(factoryName,methodName,trainParams):
     for key, value in trainParams.iteritems():
         training_parameters += ':'+str(key)+'='+str(value)
         methodName += '_'+str(key)+str(value)
+    #methodName+='_default'
     outSubDirName = factoryName+'_'+methodName
     outdir = GetDir(_testDirName)+'/'+outSubDirName
-    os.system('mkdir -p '+outdir)
+    os.system('mkdir -p '+outdir.replace(' ','\ '))
     outFile = TFile(outdir+'/TrainingOutput.root','RECREATE')
 
     ## Set the directory where to save the weights file.
     (TMVA.gConfig().GetIONames()).fWeightFileDir = GetDir(_weightsDirName)
-    os.system('mkdir -p '+GetDir(_weightsDirName))
+    os.system('mkdir -p '+GetDir(_weightsDirName).replace(' ','\ '))
 
     ## Initialize the TMVA factory.
     factory = TMVA.Factory(factoryName,outFile,'V:!Silent:Color') #:DrawProgressBar')
 
     ## Add variables to the factory.
     for varName, var in sorted(variables.iteritems()):
+        if _useRelativeVariables and varName=='ptsum_lep1_lep2_met':
+            continue
         factory.AddVariable(varName,varName,var[0],var[1],var[2],var[3])
-        print varName
-    #factory.AddSpectator("collinear_mass")
-    #factory.AddSpectator("visible_mass")
 
     ## Add the target.
     factory.AddTarget(_target)
-
     #factory.SetWeightExpression('array3')
-    print "number of events in train tree = {0}".format(TrainTree.GetEntries())
+
     ## Add the input files to the factory.
     factory.AddRegressionTree(TrainTree)    
+    #factory.SetWeightExpression( "(weights_tmva)^(0.5)", "Regression" )
 
-
-    factory.PrepareTrainingAndTestTree(TCut(Cuts(True,False)), 'nTrain_Regression=0:nTest_Regression=1:SplitMode=Random:NormMode=NumEvents:!V')
+    factory.PrepareTrainingAndTestTree(TCut(Cuts(True,False)),'nTrain_Regression=0:nTest_Regression=1:SplitMode=Random:NormMode=NumEvents:!V')
     factory.BookMethod(TMVA.Types.kBDT,methodName,training_parameters)
-    
 
     factory.TrainAllMethods()
-    factory.TestAllMethods()
-    factory.EvaluateAllMethods()
+    #factory.TestAllMethods()
+    #factory.EvaluateAllMethods()
 
     outFile.Close()
-    gROOT.LoadMacro("$ROOTSYS/tmva/test/TMVAGui.C")
-    TMVAGui(outdir+"/TrainingOutput.root")
-    raw_input('Press Enter to exit')
+
     ## Make a plot with the true mass in the training samples.
     canvas = TCanvas('canvas','canvas',500,525)
     canvas.GetPad(0).SetLeftMargin(0.15)
@@ -430,12 +607,49 @@ def Training(factoryName,methodName,trainParams):
 #####################################################################################################
 ##-------------------------------------------------------------------------------------------------##
 ##                                                                                                 ##
+##                                       Z calibration                                             ##
+##                                                                                                 ##
+##-------------------------------------------------------------------------------------------------##
+#####################################################################################################
+def doZCal(xmlFileName):
+    reader=TMVA.Reader()
+
+    for varName, var in sorted(variables.iteritems()):
+        reader.AddVariable(varName,var[4])
+
+    reader.BookMVA('BRT_HiggsMass',GetDir(_weightsDirName)+'/'+xmlFileName)
+    
+    Zfile=TFile.Open(ZttSample())
+    Ztree = Zfile.Get(_TreeNameTest)
+    massHist=TH1F('Zmasshist','Zmasshist',200,0,200)
+    nEntries=Ztree.GetEntries()
+
+    for ientry in xrange(nEntries):
+        if ientry%10000==0:
+            print 'Event', ientry, 'out of', nEntries
+        ## Get the next tree in the chain and verify
+        if Ztree.LoadTree(ientry) <  0: break
+        ## Copy next entry into memory and verify
+        if Ztree.GetEntry(ientry) <= 0: continue
+        ## Apply decay channel and selection cuts
+        if not PassedCuts(False,True,Ztree): continue
+        ## Load the variables used by the BRT
+        for varName, var in sorted(variables.iteritems()):
+            var[4][0] = getattr(Ztree,varName)
+        ## Get the BRT output
+        mass_BRT = reader.EvaluateMVA("BRT_HiggsMass")/1000.
+        massHist.Fill(mass_BRT)
+    print "Correction term:"
+    print _Zmass-massHist.GetMean()
+    return _Zmass-massHist.GetMean()
+
+#####################################################################################################
+##-------------------------------------------------------------------------------------------------##
+##                                                                                                 ##
 ##                                        BRT TESTING                                              ##
 ##                                                                                                 ##
 ##-------------------------------------------------------------------------------------------------##
 #####################################################################################################
-
-
 def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
 
     if testWOCalibration:
@@ -459,7 +673,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     elif testCalibration:
         print 'Will test calibration using weights file '+GetDir(_weightsDirName)+'/'+xmlFileName
 
-    os.system('mkdir -p '+outdir)
+    os.system('mkdir -p '+outdir.replace(' ','\ '))
 
     if doCalibration:
         calibFile = open(outdir+'/calibration.txt','w')
@@ -553,11 +767,6 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     hists['mean_mass_BRT_vs_mass_true'].SetName('g_mean_mass_BRT'+auxNameStr+'_vs_mass_true')
     hists['mean_mass_BRT_vs_mass_true'].SetMarkerSize(0.3)
     hists['mean_mass_BRT_vs_mass_true'].SetMarkerStyle(20)
-    if doCalibration and _polyfit:
-        hists['mass_true_vs_mean_mass_BRT'] = TGraphErrors()
-        hists['mass_true_vs_mean_mass_BRT'].SetName('g_mass_true'+auxNameStr+'_vs_mean_mass_BRT')
-        hists['mass_true_vs_mean_mass_BRT'].SetMarkerSize(0.3)
-        hists['mass_true_vs_mean_mass_BRT'].SetMarkerStyle(20)
     #-----------
     hists['max_mass_BRT_vs_mass_true'] = TGraphErrors()
     hists['max_mass_BRT_vs_mass_true'].SetName('g_max_mass_BRT'+auxNameStr+'_vs_mass_true')
@@ -646,13 +855,15 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
             if mass > _Zmass:
                 keys.append(mass)
 
-    fitmin = 60
-    fitmax = 115
+    fitmin = 80
+    fitmax = 160
     if testCalibration:
         fitmin = 60
         fitmax = 170
     chi2=0.
     nInFitRange=0.
+    if _doZCal:
+        const=doZCal(xmlFileName)
     for p, key in enumerate(keys):
         isZ = (key == "Z")
         if not isZ: mass = key
@@ -672,19 +883,50 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
             if trees[str(key)].LoadTree(ientry) <  0: break
             ## Copy next entry into memory and verify
             if trees[str(key)].GetEntry(ientry) <= 0: continue
-            ## Apply decay channel and selection cut
-            if not PassedCuts(True,False,trees[str(key)]): continue
+            ## Apply decay channel and selection cuts
+            if not PassedCuts(False,True,trees[str(key)]): continue
             ## Load the variables used by the BRT
             for varName, var in sorted(variables.iteritems()):
-                var[4][0] = getattr(trees[str(key)],varName)
-                hists[varName].Fill(getattr(trees[str(key)],varName))
+                if varName=='abs(lep1_eta)':
+                    var[4][0] = abs(getattr(trees[str(key)],'lep1_eta'))
+                    hists[varName].Fill(abs(getattr(trees[str(key)],'lep1_eta')))
+                elif varName=='lep2_eta*lep1_eta/abs(lep1_eta)':
+                    if getattr(trees[str(key)],'lep1_eta')<0:
+                        var[4][0] = -getattr(trees[str(key)],'lep2_eta')
+                        hists[varName].Fill(-getattr(trees[str(key)],'lep2_eta'))
+                    else:
+                        var[4][0] = getattr(trees[str(key)],'lep2_eta')
+                        hists[varName].Fill(getattr(trees[str(key)],'lep2_eta'))
+                elif varName=='ptdiff_lep1_lep2*ptsum_lep1_lep2':
+                    var[4][0] = getattr(trees[str(key)],'ptdiff_lep1_lep2')*getattr(trees[str(key)],'ptsum_lep1_lep2')
+                    hists[varName].Fill(getattr(trees[str(key)],'ptdiff_lep1_lep2'))*getattr(trees[str(key)],'ptsum_lep1_lep2')
+                elif varName=='pttot_lep1_lep2*ptsum_lep1_lep2':
+                    var[4][0] = getattr(trees[str(key)],'pttot_lep1_lep2')*getattr(trees[str(key)],'ptsum_lep1_lep2')
+                    hists[varName].Fill(getattr(trees[str(key)],'pttot_lep1_lep2'))*getattr(trees[str(key)],'ptsum_lep1_lep2')
+                elif varName=='pttot_lep1_lep2_met*ptsum_lep1_lep2_met':
+                    var[4][0] = getattr(trees[str(key)],'pttot_lep1_lep2_met')*getattr(trees[str(key)],'pttot_lep1_lep2_met')
+                    hists[varName].Fill(getattr(trees[str(key)],'pttot_lep1_lep2_met'))*getattr(trees[str(key)],'pttot_lep1_lep2_met')
+                else:
+                    var[4][0] = getattr(trees[str(key)],varName)
+                    hists[varName].Fill(getattr(trees[str(key)],varName))
             ## Get the BRT output
-            mass_BRT = reader.EvaluateMVA("BRT_HiggsMass")/1000.
+            if _useFullSimVariables:
+                mass_BRT = reader.EvaluateMVA("BRT_HiggsMass")
+            else:
+                mass_BRT = reader.EvaluateMVA("BRT_HiggsMass")/1000.
             ## Use the calibration curve to correct the BRT output
             mass_BRT_corr = mass_BRT
             #Iterate variables to calculate average mass
-            sum_mass+=trees[str(key)].ditau_m/1000.
+            if _useFullSimVariables:
+                truemass=trees[str(key)].truth_mass
+            else:
+                truemass=trees[str(key)].ditau_m/1000.
+            sum_mass+=truemass
             num_good_events+=1
+            if _doZCal:
+                #print ditau_m, mass_BRT, mass_BRT+const
+                mass_BRT=mass_BRT+const
+                mass_BRT_corr=mass_BRT
             if testCalibration:
                 nEvts += 1
                 if calibration[0][1] <= mass_BRT <= calibration[-1][1]:
@@ -695,21 +937,19 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
                 else:
                     nEvtsFail += 1
                     continue
-            mass_true = trees[str(key)].ditau_m/1000.
+            mass_true = truemass
             hists['mass_true'].Fill(mass_true)
             hists['mass_BRT_'+str(key)].Fill(mass_BRT_corr)
             hists['mass_BRT_bias'].Fill(mass_BRT_corr-mass_true)
             if isZ: hists['mass_true_Z'].Fill(mass_true)
             hists['mass_true_all'].Fill(mass_true)
             hists['mass_BRT_all'].Fill(mass_BRT_corr)
-            if fitmin<=trees[str(key)].ditau_m/1000.<=fitmax:
-                chi2+=(mass_BRT_corr-trees[str(key)].ditau_m/1000.)**2
+            if fitmin<=truemass<=fitmax:
+                chi2+=(mass_BRT_corr-truemass)**2
                 nInFitRange+=1.
         if 125 <= mass <= 126:
             resolution_at_125 = [mass,rms/mean]
-        average_mass = 0
-        if num_good_events != 0:
-            average_mass=sum_mass/float(num_good_events)
+        average_mass=sum_mass/num_good_events
         if _useAverageMass:
             mass=average_mass
             print "Changed mass to", mass
@@ -750,8 +990,8 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
         if doCalibration:
             calibration.append([mass,mean])
             
-
         #Fit Bifurcated Gaussian to peak
+        """
         Mass=RooRealVar("Mass","Invariant Mass",0.,200.)
         Sigma_left=RooRealVar("WidthL","Right Mass Width",5.,40.)
         Sigma_right=RooRealVar("WidthR","Right Mass Width",5.,40.)
@@ -773,7 +1013,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
         xframe.Draw()
         canvas.SaveAs(outdir+'/bifurgaussfit_mass_BRT_'+auxNameStr+str(key)+'.png')
         canvas.Clear()
-
+        
         if is_well_calibrated:
             s_l=Sigma_left.getVal()
             s_r=Sigma_right.getVal()
@@ -791,11 +1031,16 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
             hists['res_right_vs_mass_true'].SetPoint(iPoint,mass,s_r/m)
             hists['res_right_vs_mass_true'].SetPointError(iPoint,0,math.sqrt(pow(s_r_e/m,2)+pow(s_r/(m*m)*m_e,2)))
             iPoint+=1
-    print mass_points
-    xmin = mass_points[0]-10
-    xmax = mass_points[-1]+10
-    ymin = mass_points[0]-10
-    ymax = mass_points[-1]+10
+            """
+    #xmin = mass_points[0]-10
+    #xmax = mass_points[-1]+10
+    #ymin = mass_points[0]-10
+    #ymax = mass_points[-1]+10
+    xmin = 100
+    xmax = 150
+    ymin = 90
+    ymax = 160
+
     if doCalibration:
         pickle.dump(calibration,calibFile)
 
@@ -809,7 +1054,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
         canvas.Clear()
     #-----------
     for key in keys:
-        hists['mass_BRT_'+str(key)].Rebin(9)
+        hists['mass_BRT_'+str(key)]
         hists['mass_BRT_'+str(key)].Draw()
         hists['mass_BRT_'+str(key)].Write()
         canvas.SaveAs(outdir+'/'+hists['mass_BRT_'+str(key)].GetName()+'.png')
@@ -830,8 +1075,8 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     canvas.SaveAs(outdir+'/'+hists['mass_BRT_bias'].GetName()+'.png')
     canvas.Clear()
     #-----------
-    fitmin = 60
-    fitmax = 115
+    fitmin = 100
+    fitmax = 150
     if testCalibration:
         fitmin = 60
         fitmax = 170
@@ -911,7 +1156,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     canvas.Clear()
     #-----------
     ymin = 0.0
-    ymax = 0.7
+    ymax = 0.2
     hists['res_mass_BRT_vs_mass_true'].GetXaxis().SetTitle('m_{true} [GeV]')
     hists['res_mass_BRT_vs_mass_true'].GetYaxis().SetTitle('RMS('+mBRTleg+')/<'+mBRTleg+'>')
     hists['res_mass_BRT_vs_mass_true'].GetXaxis().SetTitleOffset(1.3)
@@ -924,7 +1169,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     if len(resolution_at_125) == 2:
         line.DrawLine(resolution_at_125[0],0,resolution_at_125[0],resolution_at_125[1])
         line.DrawLine(xmin,resolution_at_125[1],resolution_at_125[0],resolution_at_125[1])
-        latex.DrawLatex((xmin+xmax)/4,ymin+(ymax-ymin)/16*6,'#sigma_{m}/m at nominal %i GeV = %0.1f%%'%(resolution_at_125[0],resolution_at_125[1]*100))
+        latex.DrawLatex((xmin+xmax)/2-20,ymin+(ymax-ymin)/16*12,'#sigma_{m}/m at nominal %i GeV = %0.1f%%'%(resolution_at_125[0],resolution_at_125[1]*100))
     latex.DrawLatex(xmin+(xmax-xmin)/16,ymin+(ymax-ymin)/16*14.5,channel_string)
     canvas.SaveAs(outdir+'/'+hists['res_mass_BRT_vs_mass_true'].GetName()+'.png')
     canvas.Write('c_'+hists['res_mass_BRT_vs_mass_true'].GetName())
@@ -1000,6 +1245,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     canvas.Clear()
         
     #----------
+    """
     ymax = 0.7
     xmin=hists['res_left_vs_mass_true'].GetX()[0]
     print xmin
@@ -1025,7 +1271,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     latex.DrawLatex(xmin+(xmax-xmin)/16,ymin+(ymax-ymin)/16*14.5,channel_string)
     canvas.SaveAs(outdir+'/res_vs_mass_true'+auxNameStr+'.png')
     canvas.Clear()
-    
+    """
     return slope1
 
 
@@ -1044,13 +1290,12 @@ def PassedCuts(asString,YesOrNo,tree=TTree()):
     return Cuts(asString,YesOrNo,tree)
 
 def Cuts(asString,YesOrNo,tree=TTree()):
-    #if not OR(asString,YesOrNo): 
-    #print 'In Cuts(): Error: one of the input variables "asString" or "YesOrNo" must be = True.'
-    #sys.exit()
-    
-    #if not XOR(asString,YesOrNo):
-        #print 'In Cuts(): Error: input variables "asString" and "YesOrNo" can not be both = True.'
-        #sys.exit()
+    if not OR(asString,YesOrNo):
+        print 'In Cuts(): Error: one of the input variables "asString" or "YesOrNo" must be = True.'
+        sys.exit()
+    if not XOR(asString,YesOrNo):
+        print 'In Cuts(): Error: input variables "asString" and "YesOrNo" can not be both = True.'
+        sys.exit()
     if _useAnalysisPresel:
         met_min=20000
         lep1_pt_min=35000
@@ -1059,10 +1304,7 @@ def Cuts(asString,YesOrNo,tree=TTree()):
         lep2_eta_max=2.5
         dR_lep_lep_max=2.6
         dR_lep_lep_min=0.8
-    
-    ## Applying cuts in a way that do not do anything
-        """
-  
+    else:
         met_min = 20000.
         lep1_pt_min = 15000.
         lep2_pt_min = 15000.
@@ -1070,25 +1312,12 @@ def Cuts(asString,YesOrNo,tree=TTree()):
         lep2_eta_max = 2.4
         dR_lep_lep_max=math.sqrt(math.pi**2+(lep1_eta_max+lep2_eta_max)**2)
         dR_lep_lep_min=0.
-
-        """
-
-    else:
-        met_min = 0.
-        lep1_pt_min = 0.
-        lep2_pt_min = 0.
-        lep1_eta_max = 24
-        lep2_eta_max = 24
-        dR_lep_lep_max=math.sqrt(math.pi**2+(lep1_eta_max+lep2_eta_max)**2)
-        dR_lep_lep_min=0.
     if YesOrNo:
         passed = True
-        if _doLepLep and tree.leplep == 0:
-            passed = False
-        if _doLepHad and tree.lephad == 0:
-            passed = False
-        if _doHadHad and tree.hadhad == 0: 
-            passed = False
+        if _doLepLep and tree.leplep == 0: passed = False
+        if _doLepHad and tree.lephad == 0: passed = False
+        if not(_useFullSimVariables):
+            if _doHadHad and tree.hadhad == 0: passed = False
         if _applyPreselCuts:
             if _useAnalysisVariables:
                 if passed and not (abs(tree.lep1_eta) < lep1_eta_max): passed = False
@@ -1097,6 +1326,20 @@ def Cuts(asString,YesOrNo,tree=TTree()):
                 if passed and not (tree.lep2_pt > lep2_pt_min): passed = False
                 if passed and not (tree.met_et > met_min): passed = False
                 if passed and not (dR_lep_lep_min<tree.dR_lep_lep<dR_lep_lep_max): passed = False
+            if _useSmirnovVariables:
+                if passed and not (abs(tree.lep1_eta) < lep1_eta_max): passed = False
+                if passed and not (abs(tree.lep2_eta) < lep2_eta_max): passed = False
+                if passed and not (tree.lep1_pt > lep1_pt_min): passed = False
+                if passed and not (tree.lep2_pt > lep2_pt_min): passed = False
+                if passed and not (tree.met_et_smirnov_par_perp > met_min): passed = False
+                if passed and not (dR_lep_lep_min<tree.dR_lep_lep<dR_lep_lep_max): passed = False
+            if _useFullSimVariables:
+                if passed and not (abs(tree.tau1_eta) < lep1_eta_max): passed = False
+                if passed and not (abs(tree.tau2_eta) < lep2_eta_max): passed = False
+                if passed and not (tree.tau1_pt > lep1_pt_min): passed = False
+                if passed and not (tree.tau2_pt > lep2_pt_min): passed = False
+                if passed and not (tree.MET_et > met_min): passed = False
+                if passed and not (dR_lep_lep_min<tree.dR_lep_lep<dR_lep_lep_max): passed = False
             if _useSmearedAnalysisVariables:
                 if passed and not (abs(tree.lep1_eta_sm) < lep1_eta_max): passed = False
                 if passed and not (abs(tree.lep2_eta_sm) < lep2_eta_max): passed = False
@@ -1104,12 +1347,12 @@ def Cuts(asString,YesOrNo,tree=TTree()):
                 if passed and not (tree.lep2_pt_sm > lep2_pt_min): passed = False
                 if passed and not (tree.met_et_sm > met_min): passed = False
                 if passed and not (dR_lep_lep_min<tree.dR_lep_lep_sm<dR_lep_lep_max): passed = False
-    
+        return passed
     if asString:
         decay_channel_cuts = ''
         if _doLepLep: decay_channel_cuts = 'leplep==1'
         if _doLepHad: decay_channel_cuts = 'lephad==1'
-        if _doHadHad: decay_channel_cuts = 'hadhad==1'
+        if _doHadHad and not(_useFullSimVariables): decay_channel_cuts = 'hadhad==1'
         kinematic_cuts = ''
         if _applyPreselCuts:
             if _useAnalysisVariables:
@@ -1118,17 +1361,27 @@ def Cuts(asString,YesOrNo,tree=TTree()):
                 kinematic_cuts += ' && lep1_pt > '+str(lep1_pt_min)
                 kinematic_cuts += ' && lep2_pt > '+str(lep2_pt_min)
                 kinematic_cuts += ' && met_et > '+str(met_min)
+            if _useSmirnovVariables:
+                kinematic_cuts  = '    abs(lep1_eta) < '+str(lep1_eta_max)
+                kinematic_cuts += ' && abs(lep2_eta) < '+str(lep2_eta_max)
+                kinematic_cuts += ' && lep1_pt > '+str(lep1_pt_min)
+                kinematic_cuts += ' && lep2_pt > '+str(lep2_pt_min)
+                kinematic_cuts += ' && met_et_smirnov_par_perp > '+str(met_min)
             if _useSmearedAnalysisVariables:
                 kinematic_cuts  = '    abs(lep1_eta_sm) < '+str(lep1_eta_max)
                 kinematic_cuts += ' && abs(lep2_eta_sm) < '+str(lep2_eta_max)
                 kinematic_cuts += ' && lep1_pt_sm > '+str(lep1_pt_min)
                 kinematic_cuts += ' && lep2_pt_sm > '+str(lep2_pt_min)
                 kinematic_cuts += ' && met_et_sm > '+str(met_min)
+            if _useFullSimVariables:
+                kinematic_cuts += '    abs(tau1_eta) < '+str(lep1_eta_max)
+                kinematic_cuts += ' && abs(tau2_eta) < '+str(lep2_eta_max)
+                kinematic_cuts += ' && tau1_pt > '+str(lep1_pt_min)
+                kinematic_cuts += ' && tau2_pt > '+str(lep2_pt_min)
+                kinematic_cuts += ' && MET_et > '+str(met_min)
         cuts = decay_channel_cuts+' && '+kinematic_cuts
-        
         while cuts[0]  in [' ','&','|']: cuts = cuts[1:]
         while cuts[-1] in [' ','&','|']: cuts = cuts[:-2]
-    
         return cuts
 
 
@@ -1150,6 +1403,9 @@ def GetDir(basedir):
         if _useTauDecayVariables:        directory += '/with_tau_decay_variables/'
         if _useAnalysisVariables:        directory += '/with_analysis_variables/'
         if _useSmearedAnalysisVariables: directory += '/with_smeared_analysis_variables/'
+        if _useFullSimVariables:         directory += '/with_full_sim_variables/'
+        if _useRelativeVariables:        directory += '/with_relative_variables/'
+        if _useRelativeVariables:        directory += '/with_smirnov_variables/'
     else:
         if not(_target=='ditau_m'): directory+='/'+_target+'/'
         if _useZtt:            directory += '/with_Z/'
@@ -1171,51 +1427,33 @@ def GetDir(basedir):
             if _doLepLep:      directory += '/with_smeared_analysis_variables/leplep/'
             if _doLepHad:      directory += '/with_smeared_analysis_variables/lephad/'
             if _doHadHad:      directory += '/with_smeared_analysis_variables/hadhad/'
+	if _useFullSimVariables:
+            if _doLepLep:      directory += '/with_full_sim_variables/leplep/'
+            if _doLepHad:      directory += '/with_full_sim_variables/lephad/'
+            if _doHadHad:      directory += '/with_full_sim_variables/hadhad/'
+        if _useSmirnovVariables:
+            if _doLepLep:      directory += '/with_smirnov_variables/leplep/'
+            if _doLepHad:      directory += '/with_smirnov_variables/lephad/'
+            if _doHadHad:      directory += '/with_smirnov_variables/hadhad/'
+        if _useRelativeVariables:
+            directory += '/with_relative_variables'
     return directory.replace('//','/')
 
 
 
 ##----------------------------------------------------------------------------------------
 
-
 def inputHttSample(mass):
-    ##return _HttSamplesDirName+'/Hmass%s.root'%(mass)
-    return _HttSamplesDirName+'/flat_ggH_%s.root'%(mass)
+    return _HttSamplesDirName+'/Hmass%s.root'%(mass)
 def HttSample(mass):
-    #return GetDir(_treesDirName)+'/H/ggHtautau_m%s.root'%(mass)
-    return GetDir(_treesDirName)+'/H/flat_ggH_%s.root'%(mass)
+    return GetDir(_treesDirName)+'/H/ggHtautau_m%s.root'%(mass)
+
 def inputZttSample():
     return _ZttSamplesDirName+'/Z.root'
 def ZttSample():
     return GetDir(_treesDirName)+'/Z/Ztautau.root'
 
 
-#####################################################################################################
-##-------------------------------------------------------------------------------------------------##
-##                                                                                                 ##
-## Function to calculate the Met_Phi_Centrality variable, as well as some basic phi operations.    ## 
-##                                                                                                 ##
-##-------------------------------------------------------------------------------------------------##
-#####################################################################################################
-
-def getMetPhiCentrality(Tau1_phi,Tau2_phi,MET_phi):
-    A=math.sin(MET_phi-Tau1_phi)/math.sin(Tau2_phi-Tau1_phi)
-    B=math.sin(Tau2_phi-MET_phi)/math.sin(Tau2_phi-Tau1_phi)
-    return (A+B)/math.sqrt(A**2+B**2)
-
-def deltaPhi(phi1,phi2):
-    dPhi=abs(phi1-phi2)
-    while dPhi>math.pi:
-        dPhi=dPhi-2*math.pi
-    return abs(dPhi)
-
-def addPhi(phi1,phi2):
-    sumPhi=phi1+phi2
-    while sumPhi>math.pi:
-        sumPhi-=2*math.pi
-    while sumPhi<-math.pi:
-        sumPhi+=2*math.pi
-    return sumPhi
 
 #####################################################################################################
 ##-------------------------------------------------------------------------------------------------##
@@ -1272,24 +1510,24 @@ if _fillTrainTestTrees:
         iFileName = inputHttSample(mass)
         oFileName = HttSample(mass)
         nTrainEvtsMax = 50000
-        FillTrainTestTrees(iFileName.replace('//','/'),oFileName.replace('//','/'),nTrainEvtsMax)
+        FillTrainTestTrees(iFileName.replace('//','/'),oFileName.replace('//','/'),nTrainEvtsMax,truemass=float(mass))
     if _useZtt:
         iFileName = inputZttSample()
         oFileName = ZttSample()
         nTrainEvtsMax = 500000
         FillTrainTestTrees(iFileName.replace('//','/'),oFileName.replace('//','/'),nTrainEvtsMax)
 
-for nem in [20]: #[10, 20, 40, 60, 80]:
-    for nc in [20]: #-1 is not supported yet, the system sets it to 200
-        for md in [100]:
-            for nt in [40]: #[10, 20, 40, 60, 80, 100, 150, 200, 250]:
+for mns in [40]: #100#[10, 20, 40, 60, 80]:
+    for nc in [20]: #20#-1 is not supported yet, the system sets it to 200
+        for md in [100]:#100
+            for nt in [80]: #100#[10, 20, 40, 60, 80, 100, 150, 200, 250]:
                 factoryName = 'TMVARegression'
                 methodName  = 'BRT_HiggsMass'
                 trainParams = {}
                 trainParams['AdaBoostBeta'] = 0.2
                 trainParams['nCuts']        = nc
                 trainParams['NTrees']       = nt
-                trainParams['nEventsMin']   = nem
+                trainParams['nEventsMin']   = mns
                 trainParams['MaxDepth']     = md
                 if _doTraining:
                     Training(factoryName,methodName,trainParams)
@@ -1300,6 +1538,9 @@ for nem in [20]: #[10, 20, 40, 60, 80]:
                         xmlFileName += '_'+str(key)+str(value)
                         training_parameters += '   '+str(key)+'='+str(value)
                     xmlFileName += '.weights.xml'
+                    if _doZCal:
+                        slope=Testing(xmlFileName,True,False,False)
+                        slopes_bef_calib[training_parameters] = slope
                     if _testWOCalibration:
                         slope = Testing(xmlFileName,True,False,False)
                         slopes_bef_calib[training_parameters] = slope
