@@ -84,7 +84,7 @@ def doZCal(treename,filelist,reader,nPoints=100,cutString='preselection',Zmass=9
     #mean=fit_func.GetParameter(1)
     return Zmass-mass_BRT.GetMean(),mass_BRT
 
-def getHists(treename,filename,reader,lumi,overallLumi,nPoints=100,cutString='boosted',ZCalConst=0.,tauVeto=False):
+def getHists(treename,filename,reader,lumi,overallLumi,nPoints=100,cutString= 'boosted',ZCalConst=0.,tauVeto=False):
     tlv_tau1=ROOT.TLorentzVector()
     tlv_tau2=ROOT.TLorentzVector()
     tv2_met=ROOT.TVector2()

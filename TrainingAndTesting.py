@@ -13,7 +13,7 @@
 #####################################################################################################
 
 from ROOT import *
-import os, sys, math
+import os, sys, math, itertools
 import pickle
 import array
 from random import gauss
@@ -24,7 +24,7 @@ from threading import Timer
 import thread
 import select, subprocess
 from tools.mass import collinearmass
-
+ROOT.gROOT.SetBatch(True)
 TMVA.Tools.Instance()
 
 #####################################################################################################
@@ -75,13 +75,13 @@ _useAverageMass=True
 _target='ditau_m'
 
 _fillTrainTestTrees=False
-_doTraining =False
-_doTesting  = True
+_doTraining =True
+_doTesting  = False
 
 if _doTesting:
     _testWOCalibration = False
-    _doCalibration     = False
-    _testCalibration   = True
+    _doCalibration     = True
+    _testCalibration   = False
     if _doCalibration and not(_target=='ditau_m'):
         print 'Calibration is only available for regression on ditau mass.'
         sys.exit()
@@ -162,7 +162,7 @@ _mass_points_all = range (40, 201, 5)
 #_mass_points_all.sort()
 
 #_HttSamplesDirName = '/cluster/data04/mquennev/higgs/rootfiles'
-_HttSamplesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/Truth_level_Htautau'
+_HttSamplesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Truth_Level_Samples'
 
 _ZttSamplesDirName = _HttSamplesDirName
 _TreeNameInput     = 'Tree'
@@ -172,12 +172,53 @@ _TreeNameInput     = 'Tree'
 #_testDirName    = '/cluster/data04/mquennev/higgs/test'
 #_weightsDirName = '/cluster/data04/mquennev/higgs/weights'
 
-_treesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/trees'
-_testDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/test'
-_weightsDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/weights'
+
+
+### Booleans for Training and Testing Samples selection
+
+_doggHTestingOnggHTraining = False
+_doVBFHTestingOnVBFHTraining =False 
+_doVBFHTestingOnggHTraining = False
+
+_doggHTestingOnVBFHTraining = False
+
+_doTrainingOnMixtureOfggHAndVBF = True
+
+
+if _doggHTestingOnggHTraining:
+    _treesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-H/trees'
+    _testDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-H/test'
+    _weightsDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-H/weights'
+
+if _doVBFHTestingOnVBFHTraining:
+    _treesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/VBF-H/trees'
+    _testDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/VBF-H/test'
+    _weightsDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/VBF-H/weights'
+
+
+if _doVBFHTestingOnggHTraining:
+    _treesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/VBF-H/trees'
+    _testDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-VBF-H/test/VBFTestingOnggHTraining'
+    _weightsDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-H/weights'
+
+if _doggHTestingOnVBFHTraining:
+    _treesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-H/trees'
+    _testDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-VBF-H/test/ggHTestingOnVBFHTraining'
+    _weightsDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/VBF-H/weights'
+
+
+if _doTrainingOnMixtureOfggHAndVBF:
+    _treesDirName = '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Training_on_mixture_of_ggH_VBF/trees'
+    _testDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Training_on_mixture_of_ggH_VBF/test'
+    _weightsDirName =  '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Training_on_mixture_of_ggH_VBF/weights'
+
 
 _TreeNameTrain  = 'TreeTrain'
 _TreeNameTest   = 'TreeTest'
+
+
+if _doTrainingOnMixtureOfggHAndVBF:
+    _TreeNameTrain = 'Tree'
 
 variables = {}
 if _useBosonVariables:
@@ -344,7 +385,9 @@ def Training(factoryName,methodName,trainParams):
     for mass in _mass_points_train:
         if _useZtt and _Zmass_window[0] < mass < _Zmass_window[-1]: continue
         TrainSamples.append(HttSample(mass))
-
+# mixing VBF , ggH creates a list of ntuples which we should convert to a list again
+    TrainSamples = list(itertools.chain(*TrainSamples))
+    print TrainSamples
     ## Add the training samples to a chain to be used by the factory.
     TrainTree = TChain(_TreeNameTrain)
     for sample in TrainSamples:
@@ -389,8 +432,9 @@ def Training(factoryName,methodName,trainParams):
     
 
     factory.TrainAllMethods()
-    factory.TestAllMethods()
-    factory.EvaluateAllMethods()
+    # This is TMVA evaluating the BRT quality
+    # factory.TestAllMethods()
+    # factory.EvaluateAllMethods()
 
     outFile.Close()
     gROOT.LoadMacro("$ROOTSYS/tmva/test/TMVAGui.C")
@@ -489,6 +533,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     hists = {}
     for mass in mass_points:
         files[str(mass)] = TFile.Open(HttSample(mass))
+        print files[str(mass)].GetName() 
         trees[str(mass)] = files[str(mass)].Get(_TreeNameTest)
     if _useZtt:
         files["Z"] = TFile.Open(ZttSample())
@@ -847,6 +892,7 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     hists['mean_mass_BRT_vs_mass_true'].GetXaxis().SetRangeUser(xmin,xmax)
     hists['mean_mass_BRT_vs_mass_true'].GetYaxis().SetRangeUser(ymin,ymax)
     hists['mean_mass_BRT_vs_mass_true'].Draw('AP')
+    hists['mean_mass_BRT_vs_mass_true'].Write()
 
     box.SetFillColor(kWhite)
     box.DrawBox((xmin+xmax)/2-5,ymin+(ymax-ymin)/16*4.5,xmax,ymin+(ymax-ymin)/16*7)
@@ -874,6 +920,8 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     hists['max_mass_BRT_vs_mass_true'].GetXaxis().SetRangeUser(xmin,xmax)
     hists['max_mass_BRT_vs_mass_true'].GetYaxis().SetRangeUser(ymin,ymax)
     hists['max_mass_BRT_vs_mass_true'].Draw('AP')
+    hists['max_mass_BRT_vs_mass_true'].Write()
+    
     box.SetFillColor(kWhite)
     box.DrawBox((xmin+xmax)/2-5,ymin+(ymax-ymin)/16*4.5,xmax,ymin+(ymax-ymin)/16*7)
     latex.DrawLatex((xmin+xmax)/2,ymin+(ymax-ymin)/16*6,'Linear Fit in [%i,%i] GeV:'%(fitmin,fitmax))
@@ -900,7 +948,8 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     hists['med_mass_BRT_vs_mass_true'].GetXaxis().SetRangeUser(xmin,xmax)
     hists['med_mass_BRT_vs_mass_true'].GetYaxis().SetRangeUser(ymin,ymax)
     hists['med_mass_BRT_vs_mass_true'].Draw('AP')
-    
+    hists['med_mass_BRT_vs_mass_true'].Write()    
+
     box.SetFillColor(kWhite)
     box.DrawBox((xmin+xmax)/2-5,ymin+(ymax-ymin)/16*4.5,xmax,ymin+(ymax-ymin)/16*7)
     latex.DrawLatex((xmin+xmax)/2,ymin+(ymax-ymin)/16*6,'Linear Fit in [%i,%i] GeV:'%(fitmin,fitmax))
@@ -919,6 +968,8 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     hists['res_mass_BRT_vs_mass_true'].GetXaxis().SetRangeUser(xmin,xmax)
     hists['res_mass_BRT_vs_mass_true'].GetYaxis().SetRangeUser(ymin,ymax)
     hists['res_mass_BRT_vs_mass_true'].Draw('AP')
+    hists['res_mass_BRT_vs_mass_true'].Write()
+
     line.SetLineStyle(kDashed)
     line.SetLineWidth(2)
     if len(resolution_at_125) == 2:
@@ -939,6 +990,8 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
     hists['rms_mass_BRT_vs_mass_true'].GetXaxis().SetRangeUser(xmin,xmax)
     hists['rms_mass_BRT_vs_mass_true'].GetYaxis().SetRangeUser(ymin,ymax)
     hists['rms_mass_BRT_vs_mass_true'].Draw('AP')
+    hists['rms_mass_BRT_vs_mass_true'].Write()
+
     latex.DrawLatex(xmin+(xmax-xmin)/16,ymin+(ymax-ymin)/16*14.5,channel_string)
     canvas.SaveAs(outdir+'/'+hists['rms_mass_BRT_vs_mass_true'].GetName()+'.png')
     canvas.Write('c_'+hists['rms_mass_BRT_vs_mass_true'].GetName())
@@ -954,6 +1007,8 @@ def Testing(xmlFileName,testWOCalibration,doCalibration,testCalibration):
         hists['calib_efficiency_vs_mass_true'].GetXaxis().SetRangeUser(xmin,xmax)
         hists['calib_efficiency_vs_mass_true'].GetYaxis().SetRangeUser(ymin,ymax)
         hists['calib_efficiency_vs_mass_true'].Draw('AP')
+        hists['calib_efficiency_vs_mass_true'].Write()
+
         latex.DrawLatex(xmin+(xmax-xmin)/16,ymin+(ymax-ymin)/16*14.5,channel_string)
         canvas.SaveAs(outdir+'/'+hists['calib_efficiency_vs_mass_true'].GetName()+'.png')
         canvas.Write('c_'+hists['calib_efficiency_vs_mass_true'].GetName())
@@ -1180,10 +1235,28 @@ def GetDir(basedir):
 
 def inputHttSample(mass):
     ##return _HttSamplesDirName+'/Hmass%s.root'%(mass)
-    return _HttSamplesDirName+'/flat_ggH_%s.root'%(mass)
+    if _doggHTestingOnggHTraining or _doggHTestingOnVBFHTraining: 
+        return _HttSamplesDirName+'/flat_ggH_%s.root'%(mass)
+    elif _doVBFHTestingOnVBFHTraining or _doVBFHTestingOnggHTraining:
+        return _HttSamplesDirName+'/flat_VBFH_%s.root'%(mass)
+    else :
+        return _HttSamplesDirName+'/flat_ggH_%s.root'%(mass), _HttSamplesDirName+'/flat_VBFH_%s.root'%(mass)
+    
+
+
 def HttSample(mass):
     #return GetDir(_treesDirName)+'/H/ggHtautau_m%s.root'%(mass)
-    return GetDir(_treesDirName)+'/H/flat_ggH_%s.root'%(mass)
+    if _doggHTestingOnggHTraining or _doggHTestingOnVBFHTraining:
+        return GetDir(_treesDirName)+'/H/flat_ggH_%s.root'%(mass)
+
+    elif _doVBFHTestingOnVBFHTraining or _doVBFHTestingOnggHTraining:
+         return GetDir(_treesDirName)+'/H/flat_VBFH_%s.root'%(mass)
+
+    else :
+        return _HttSamplesDirName+'/flat_ggH_%s.root'%(mass), _HttSamplesDirName+'/flat_VBFH_%s.root'%(mass)
+
+
+
 def inputZttSample():
     return _ZttSamplesDirName+'/Z.root'
 def ZttSample():

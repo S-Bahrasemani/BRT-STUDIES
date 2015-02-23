@@ -7,6 +7,7 @@ import ROOT
 from tools import testOnTree, BRToutput, roccurve
 import tools.atlasstyle
 
+ROOT.gROOT.SetBatch(True)
 ############################################################################
 ##############  Configure the options in this section  #####################
 #### Currently, variable list must be updated in ./modules/BRTOutput.py ####
@@ -23,26 +24,24 @@ _doZCal=False
 ### Fraction of integral of histogram to do gaussian fits over ###
 _integralFraction=0.8
 
-### Where to send plots ###
-_outputFilePath='./plots'
 
 ### Full sim sample settings (_compareMassEstimators only) ###
 _overallLumi=20.3
 
 #Z+jets samples
-_pathToZ='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/Full_Simulations_Samples/'
+_pathToZ='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Full_Sim_Samples/'
 _fileListZ=[_pathToZ+'ZtautauNp'+str(i)+'.root' for i in range(6)]
 _treeNameZ='Tree'
 _ZLumiList=[22.8,51.4,54.3,59.7,84.4,155.1]
 
 #DY Z+jets samples
-_pathToDYZ='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/Full_Simulations_Samples/'
+_pathToDYZ='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Full_Sim_Samples/'
 _fileListDYZ=[_pathToDYZ+'DY_ZtautauNp'+str(i)+'.root' for i in range(6)]
 _treeNameDYZ='Tree'
 _DYZLumiList=[.2,2.3,7.4,10.7,119.9,145.5]
 
 #EW Z+jets samples
-_pathToEWZ='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/Full_Simulations_Samples/'
+_pathToEWZ='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Full_Sim_Samples/'
 _fileListEWZ=[_pathToEWZ+'EW_Ztautau.root' for i in range(1)]
 _treeNameEWZ='Tree'
 _EWZLumiList=[1390.0]
@@ -51,13 +50,13 @@ _EWZLumiList=[1390.0]
 _masses=[100,105,110,115,120,125,130,135,140,145,150]
 
 #ggH
-_pathToggH='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/Full_Simulations_Samples/'
+_pathToggH='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Full_Sim_Samples/'
 _fileListggH=[_pathToggH+'ggH_Hmass'+str(i)+'.root' for i in _masses]
 _treeNameggH='Tree'
 _ggHLumiList=[1454.0,1619.3,1819.7,2080.3,2433.2,3912.1,3673.1,4802.9,6144.4,9468.1,14716.7]
 
 #VBFH
-_pathToVBFH='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/Full_Simulations_Samples/'
+_pathToVBFH='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Full_Sim_Samples/'
 _fileListVBFH=[_pathToVBFH+'VBFH_Hmass'+str(i)+'.root' for i in _masses]
 _treeNameVBFH='Tree'
 _VBFHLumiList=[18813.9,19981.9,21451.0,23629.9,26676.8,47773.8,37606.8,47633.5,58468.3,88671.4,135924.5]
@@ -85,9 +84,53 @@ _CorrectionFactor='visible_mass'
 ### BRT weight file ###
 ##_weightFilePath='/media/Portable Drive/Work/higgs/weights/applying_preselection_cuts/with_analysis_variables/hadhad/TMVARegression_BRT_HiggsMass_nEventsMin40_AdaBoostBeta0.2_nCuts20_MaxDepth100_NTrees80.weights.xml'
 
-_weightFilePath='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT_TRAINING/weights/without_preselection_cuts/with_analysis_variables/hadhad/TMVARegression_BRT_HiggsMass_nEventsMin20_AdaBoostBeta0.2_nCuts20_MaxDepth100_NTrees40.weights.xml'
+## Choosing the training type xml file to use 
+_useggHTraining = False
+_useVBFHTraining = False
+_useMixedggHVBFTraining = True
+if _useggHTraining:
+    _weightFilePath='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/gg-H/weights/without_preselection_cuts/with_analysis_variables/hadhad/TMVARegression_BRT_HiggsMass_nEventsMin20_AdaBoostBeta0.2_nCuts20_MaxDepth100_NTrees40.weights.xml'
 
- 
+if _useVBFHTraining:
+    _weightFilePath='/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/VBF-H/weights/without_preselection_cuts/with_analysis_variables/hadhad/TMVARegression_BRT_HiggsMass_nEventsMin20\
+_AdaBoostBeta0.2_nCuts20_MaxDepth100_NTrees40.weights.xml'
+
+if _useMixedggHVBFTraining:
+    _weightFilePath= '/cluster/data03/sbahrase/BrtStudies/PracticeDesk/TRUTH_LEVEL_BRT/Training_on_mixture_of_ggH_VBF/weights/without_preselection_cuts/with_analysis_variables/hadhad/TMVARegression_BRT_HiggsMass_nEventsMin20_AdaBoostBeta0.2_nCuts20_MaxDepth100_NTrees40.weights.xml'
+
+
+## Choosing the testing samples
+
+_TestOnggHSamples = False
+_TestOnVBFHSamples= True
+
+
+
+## Where to send the plots
+
+if _useggHTraining and _TestOnVBFHSamples:
+    _outputFilePath='./Training_on_truth_Testing_on_fullsim_Results/Training_on_truth_ggH_Testing_on_fullsim_VBF'   
+
+if _useVBFHTraining and _TestOnggHSamples:
+    _outputFilePath='./Training_on_truth_Testing_on_fullsim_Results/Training_on_truth_VBF_Testing_on_fullsim_ggH'
+
+if _useggHTraining and _TestOnggHSamples:
+    _outputFilePath='./Training_on_truth_Testing_on_fullsim_Results/Training_on_truth_ggH_Testing_on_fullsim_ggH'
+
+
+if _useVBFHTraining and _TestOnVBFHSamples:
+    _outputFilePath='./Training_on_truth_Testing_on_fullsim_Results/Training_on_truth_VBF_Testing_on_fullsim_VBF'
+
+
+if _useMixedggHVBFTraining and _TestOnVBFHSamples:
+    _outputFilePath = './Training_on_mixture_of_ggH_VBF/test/VBF'
+
+if _useMixedggHVBFTraining and _TestOnggHSamples:
+    _outputFilePath = './Training_on_mixture_of_ggH_VBF/test/ggH'
+
+
+
+
 #_weightFilePath='/media/Portable Drive/Work/higgs/weights/applying_preselection_cuts/with_analysis_variables/hadhad/TMVARegression_BRT_HiggsMass_nEventsMin40_AdaBoostBeta0.2_nCuts20_MaxDepth100_NTrees80.weights.xml'
 ### Number of bins in mass distributions for calculations ###
 _nPoints=100
@@ -163,11 +206,21 @@ else:
 
 if _useH:
     print 'Evaluating on H samples...'
+    
+## Testing on ggH or VBF samples samples only
+if _TestOnggHSamples:
+    _cutString= 'boosted'
     H_hists={imass:testOnTree.getHists(_treeNameggH,i,reader,ilumi,_overallLumi,nPoints=_nPoints,cutString=_cutString,ZCalConst=const) for imass,i,ilumi in zip(_masses,_fileListggH,_ggHLumiList)}
-    H_VBFHhists={imass:testOnTree.getHists(_treeNameVBFH,i,reader,ilumi,_overallLumi,nPoints=_nPoints,cutString=_cutString,ZCalConst=const) for imass,i,ilumi in zip(_masses,_fileListVBFH,_VBFHLumiList)}
-    for imass in H_hists.keys():
-        for i in range(3):
-            H_hists[imass][i].Add(H_VBFHhists[imass][i])
+    #print  _cutstring
+if _TestOnVBFHSamples:   
+    _cutString='vbf'
+    H_hists={imass:testOnTree.getHists(_treeNameVBFH,i,reader,ilumi,_overallLumi,nPoints=_nPoints,cutString=_cutString,ZCalConst=const) for imass,i,ilumi in zip(_masses,_fileListVBFH,_VBFHLumiList)}
+    
+##Adding VBF and ggH Histograms
+
+#for imass in H_hists.keys():
+     #   for i in range(3):
+      #      H_hists[imass][i].Add(H_VBFHhists[imass][i])
     print 'Complete!\n'
 
 if _useZ:
@@ -979,6 +1032,8 @@ for i in range(3):
         roc_curves_120_125[i].Write()
         roc_curves_125_130[i].Write()
         roc_curves_100_150[i].Write()
+        reco_vs_truth_label.Write()
+
 if _variablePlots:
     for imass in _masses:
         for k in variable_hists_Truth[imass].keys():
